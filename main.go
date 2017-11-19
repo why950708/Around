@@ -8,7 +8,9 @@ import (
 	"strconv"
 	"reflect"
 	elastic "gopkg.in/olivere/elastic.v3"
-	"github.com/pborman/uuid"
+	//"github.com/pborman/uuid"
+	"cloud.google.com/go/bigtable"
+	"context"
 	//"strings"
 )
 
@@ -17,8 +19,8 @@ const (
 	TYPE = "post"
 	DISTANCE = "200km"
 	// Needs to update
-	//PROJECT_ID = "around-xxx"
-	//BT_INSTANCE = "around-post"
+	PROJECT_ID = "titan-184321"
+	BT_INSTANCE = "around-post"
 	// Needs to update this URL if you deploy it to cloud.
 	ES_URL = "http://www.whongyi.com:9200"
 
@@ -92,9 +94,33 @@ func handlerPost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// fmt.Fprintf(w, "Post received: %s\n", p.Message)
-	id := uuid.New()
+	//id := uuid.New()
 	// Save to ES.
-	saveToES(&p, id)
+	//saveToES(&p, id)
+	ctx := context.Background()
+	// you must update project name here
+	bt_client, err := bigtable.NewClient(ctx, PROJECT_ID, BT_INSTANCE)
+	if err != nil {
+		panic(err)
+		return
+	}
+	// open table
+	tbl := bt_client.Open("post")
+	// Create mutation
+	mut := bigtable.NewMutation()
+
+	mut.Set("post", "user", bigtable.Now(), []byte(p.User))
+	mut.Set("post", "message", bigtable.Now(), []byte(p.Message))
+
+	mut.Set("location", "lat", bigtable.Now(), []byte(strconv.FormatFloat(p.Location.Lon, 'f', -1, 64)))
+	mut.Set("location", "lon", bigtable.Now(), []byte(strconv.FormatFloat(p.Location.Lon, 'f', -1, 64)))
+
+	err = tbl.Apply(ctx, "com.google.cloud", mut)
+	if err != nil {
+		panic(err)
+		return
+	}
+	fmt.Printf("Post is saved to BigTable %s\n", p.Message)
 }
 func saveToES(p *Post, id string) {
 	es_client, err := elastic.NewClient(elastic.SetURL(ES_URL), elastic.SetSniff(false))
